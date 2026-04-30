@@ -1,0 +1,65 @@
+"""Tests for the health-check and prediction endpoints."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.api.routes.predict import get_prediction_service
+from app.schemas.prediction import MoodScore, PredictionResponse
+
+client = TestClient(app)
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+def test_health_check():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Prediction endpoint (model not loaded — expects 503)
+# ---------------------------------------------------------------------------
+
+def test_predict_without_model_returns_503():
+    response = client.post("/api/v1/predict", json={"text": "I feel great today!"})
+    assert response.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Prediction endpoint (service stubbed via dependency override)
+# ---------------------------------------------------------------------------
+
+class _StubPredictionService:
+    """Stub that bypasses TensorFlow and returns a fixed response."""
+
+    def predict(self, text: str) -> PredictionResponse:
+        from app.core.config import settings
+
+        labels = settings.MOOD_LABELS
+        uniform = 1.0 / len(labels)
+        scores = [MoodScore(label=lbl, score=uniform) for lbl in labels]
+        return PredictionResponse(
+            predicted_mood=labels[0],
+            confidence=uniform,
+            scores=scores,
+        )
+
+
+@pytest.fixture(autouse=False)
+def override_service():
+    app.dependency_overrides[get_prediction_service] = lambda: _StubPredictionService()
+    yield
+    app.dependency_overrides.clear()
+
+
+def test_predict_with_stubbed_service(override_service):
+    response = client.post("/api/v1/predict", json={"text": "Hello world"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "predicted_mood" in data
+    assert "confidence" in data
+    assert len(data["scores"]) == 7
