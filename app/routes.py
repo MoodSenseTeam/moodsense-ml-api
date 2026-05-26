@@ -2,14 +2,13 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.schemas.prediction import PredictionRequest, PredictionResponse
-from app.services.prediction_service import PredictionService
+from app.inference import PredictionService
+from app.schemas import PredictionRequest, PredictionResponse
 
 router = APIRouter(tags=["prediction"])
 
 
 def get_prediction_service() -> PredictionService:
-    """Dependency that returns a PredictionService instance."""
     return PredictionService()
 
 

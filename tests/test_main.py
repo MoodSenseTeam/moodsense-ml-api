@@ -4,8 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.api.routes.predict import get_prediction_service
-from app.schemas.prediction import MoodScore, PredictionResponse
+from app.routes import get_prediction_service
+from app.schemas import MoodScore, PredictionResponse
 
 client = TestClient(app)
 
@@ -37,7 +37,7 @@ class _StubPredictionService:
     """Stub that bypasses TensorFlow and returns a fixed response."""
 
     def predict(self, text: str) -> PredictionResponse:
-        from app.core.config import settings
+        from app.config import settings
 
         labels = settings.MOOD_LABELS
         uniform = 1.0 / len(labels)

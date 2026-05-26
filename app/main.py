@@ -2,8 +2,8 @@
 
 from fastapi import FastAPI
 
-from app.api.routes import predict
-from app.core.config import settings
+from app import routes
+from app.config import settings
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -11,7 +11,7 @@ app = FastAPI(
     description="Mood/sentiment analysis API powered by TensorFlow.",
 )
 
-app.include_router(predict.router, prefix="/api/v1")
+app.include_router(routes.router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])
