@@ -36,7 +36,13 @@ def test_predict_without_model_returns_503():
 class _StubPredictionService:
     """Stub that bypasses TensorFlow and returns a fixed response."""
 
-    def predict(self, text: str) -> PredictionResponse:
+    def predict(
+        self,
+        text: str,
+        sleep_hours: float | None = None,
+        activity_level: str | None = None,
+        how_you_feeling: str | None = None,
+    ) -> PredictionResponse:
         from app.config import settings
 
         labels = settings.MOOD_LABELS
@@ -62,4 +68,4 @@ def test_predict_with_stubbed_service(override_service):
     data = response.json()
     assert "predicted_mood" in data
     assert "confidence" in data
-    assert len(data["scores"]) == 7
+    assert len(data["scores"]) == 3
