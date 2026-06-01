@@ -1,0 +1,17 @@
+{
+  "model_name": "BiLSTM_MHSA",
+  "label_names": [
+    "stress",
+    "happy",
+    "normal"
+  ],
+  "num_classes": 3,
+  "max_len": 64,
+  "max_words": 12000,
+  "embed_dim": 64,
+  "vocab_size": 12001,
+  "test_accuracy": 0.857451,
+  "test_mae_raw": 0.203024,
+  "test_mae_norm": 0.101512,
+  "timestamp": "20260601-112704"
+}
