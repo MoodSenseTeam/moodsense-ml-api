@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "MoodSense ML API"
     VERSION: str = "0.1.0"
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
 
     # Sentiment Model settings
     MODEL_PATH: str = str(_MODELS_DIR / "bilstm_mhsa.keras")

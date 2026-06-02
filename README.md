@@ -153,3 +153,17 @@ Customize model behaviors inside `app/config.py` or through your `.env` file:
   * A value of `1.0` relies **entirely** on the text model.
   * A value of `0.0` relies **entirely** on the survey model.
   * A value of `0.5` averages both model probabilities equally.
+
+---
+
+## Railway Deployment
+
+This repository is ready to deploy on Railway with the included `Dockerfile`.
+
+1. Create a new Railway service from this GitHub repository.
+2. Let Railway use the Dockerfile build.
+3. Deploy with the default runtime settings. The app now reads Railway's `PORT` variable and binds to `0.0.0.0` automatically.
+4. Keep the bundled model artifacts in the image. If you move them later, override `MODEL_PATH`, `TOKENIZER_PATH`, `SCALER_PATH`, `IMPUTER_PATH`, `XGB_MODEL_PATH`, or `RF_MODEL_PATH` in Railway variables.
+5. Use `/health` as the health check path.
+
+Because the serialized survey models depend on `scikit-learn==1.6.1` and `xgboost==3.2.0`, those packages are now declared in `pyproject.toml` so the Railway build installs the same versions used locally.
