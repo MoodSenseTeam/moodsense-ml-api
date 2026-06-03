@@ -1,26 +1,112 @@
-from pathlib import Path
+import json
 import os
+import sys
+from pathlib import Path
+
+# Allow running this file directly: python app/genai/inference.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
-from app.schemas import FactorsResponse, InsightResponse, ForecastRequest, ForecastResponse
+from openai import OpenAI
+from pydantic import BaseModel
 
-_client = None
+from app.schemas import FactorsResponse, ForecastRequest, ForecastResponse, InsightResponse
 
-def get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        # Load .env relative to this file's location to support any CWD
-        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-        load_dotenv(dotenv_path=env_path)
-        
+_env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=_env_path)
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "deepseek-v4-flash")
+
+_gemini_client = None
+_openai_client = None
+
+
+def _get_gemini_client() -> genai.Client:
+    global _gemini_client
+    if _gemini_client is None:
         api_key = os.getenv("LLM_API_KEY")
         if not api_key:
             raise ValueError(
                 "LLM_API_KEY environment variable is missing. Please check your .env file."
             )
-        _client = genai.Client(api_key=api_key)
-    return _client
+        _gemini_client = genai.Client(api_key=api_key)
+    return _gemini_client
+
+
+def _get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY environment variable is missing. Please check your .env file."
+            )
+        base_url = os.getenv("OPENAI_BASE_URL")
+        _openai_client = OpenAI(api_key=api_key, base_url=base_url)
+    return _openai_client
+
+
+
+def _generate_structured_content(
+    *,
+    system_instruction: str,
+    user_prompt: str,
+    response_schema: type[BaseModel],
+    temperature: float,
+) -> str:
+    """Call either Gemini or OpenAI with structured-output and return the raw JSON text."""
+    if LLM_PROVIDER == "openai":
+        client = _get_openai_client()
+
+        # DeepSeek & some OpenAI-compatible providers don't support strict
+        # json_schema mode. Use json_object and inject the schema into the
+        # prompt instead.
+        json_schema = response_schema.model_json_schema()
+        schema_json = json.dumps(json_schema, indent=2, ensure_ascii=False)
+
+        user_prompt = (
+            f"{user_prompt}\n\n"
+            f"IMPORTANT: You must respond with a single JSON object that "
+            f"conforms to the following JSON Schema. No other text allowed.\n\n"
+            f"```json\n{schema_json}\n```"
+        )
+
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=temperature,
+        )
+        content = response.choices[0].message.content
+        if content is None:
+            raise RuntimeError("OpenAI returned an empty response.")
+        return content
+
+    # Default: Gemini
+    client = _get_gemini_client()
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            temperature=temperature,
+        ),
+    )
+    return response.text
+
+
+# ---------------------------------------------------------------------------
+# Business-logic functions
+# ---------------------------------------------------------------------------
 
 
 def get_ai_insight(
@@ -29,9 +115,9 @@ def get_ai_insight(
     study_hours: float,
     social_score: int,
     how_you_feeling: str,
-    notes: str | None
+    notes: str | None,
 ) -> InsightResponse:
-    
+
     system_instruction = (
         "Kamu adalah 'MoodSense Buddy', seorang teman virtual yang peduli terhadap kesejahteraan dan kehidupan akademik pengguna. "
         "Kamu berbicara seperti teman dekat yang perhatian — bukan seperti dokter, guru, atau robot.\n\n"
@@ -72,19 +158,14 @@ Perasaan: {how_you_feeling}
 Catatan: "{notes if notes else '-'}"
 
 Berikan insight dan saran:"""
-    client = get_client()
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=InsightResponse,
-            temperature=0.7, # Memberikan sedikit variasi kreatif pada saran
-        )
+
+    json_text = _generate_structured_content(
+        system_instruction=system_instruction,
+        user_prompt=user_prompt,
+        response_schema=InsightResponse,
+        temperature=0.7,
     )
-    
-    return InsightResponse.model_validate_json(response.text)
+    return InsightResponse.model_validate_json(json_text)
 
 
 def get_stress_happiness_factors(
@@ -93,8 +174,9 @@ def get_stress_happiness_factors(
     study_hours: float,
     social_score: int,
     how_you_feeling: str,
-    notes: str | None
+    notes: str | None,
 ) -> FactorsResponse:
+
     system_instruction = (
         "Kamu adalah 'MoodSense Analyzer', sebuah sistem AI analitis yang mengekstrak dan menganalisis faktor-faktor penyebab stres (stressors) "
         "dan faktor pendukung kebahagiaan/keseimbangan (boosters) dari data check-in harian pengguna.\n\n"
@@ -129,22 +211,17 @@ Catatan: "{notes if notes else '-'}"
 
 Ekstrak faktor stres (stressors) dan kebahagiaan (boosters):"""
 
-    client = get_client()
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=FactorsResponse,
-            temperature=0.2,
-        )
+    json_text = _generate_structured_content(
+        system_instruction=system_instruction,
+        user_prompt=user_prompt,
+        response_schema=FactorsResponse,
+        temperature=0.2,
     )
-    
-    return FactorsResponse.model_validate_json(response.text)
+    return FactorsResponse.model_validate_json(json_text)
 
 
 def get_mood_forecast(data: ForecastRequest) -> ForecastResponse:
+
     system_instruction = (
         "Kamu adalah 'MoodSense Forecaster', sebuah sistem analitik yang memproyeksikan mood pengguna "
         "beberapa hari ke depan berdasarkan data tren historis dan metrik keseharian.\n\n"
@@ -191,19 +268,13 @@ Perasaan Terbaru: {data.latest_mood or 'Tidak diketahui'}
 
 Proyeksikan mood untuk 5 hari ke depan:"""
 
-    client = get_client()
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=ForecastResponse,
-            temperature=0.3,
-        )
+    json_text = _generate_structured_content(
+        system_instruction=system_instruction,
+        user_prompt=user_prompt,
+        response_schema=ForecastResponse,
+        temperature=0.3,
     )
-
-    return ForecastResponse.model_validate_json(response.text)
+    return ForecastResponse.model_validate_json(json_text)
 
 
 if __name__ == "__main__":
@@ -213,7 +284,7 @@ if __name__ == "__main__":
         study_hours=5.0,
         social_score=8,
         how_you_feeling="normal",
-        notes="Belajar cukup melelahkan hari ini karena ada ujian besok."
+        notes="Belajar cukup melelahkan hari ini karena ada ujian besok.",
     )
     print("Insight:")
     print(insight.model_dump_json(indent=2))
@@ -224,6 +295,6 @@ if __name__ == "__main__":
         study_hours=8.0,
         social_score=2,
         how_you_feeling="stress",
-        notes="Belajar terus buat ujian besok, capek banget."
+        notes="Belajar terus buat ujian besok, capek banget.",
     )
     print(factors.model_dump_json(indent=2))
