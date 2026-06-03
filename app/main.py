@@ -30,3 +30,7 @@ app.include_router(routes.router, prefix="/api/v1")
 @app.get("/health", tags=["health"])
 def health_check():
     return {"status": "ok"}
+
+@app.get("/", tags=["Welcome"])
+def welcome():
+    return {"message": "Welcome to MoodSense ML-API!"}
