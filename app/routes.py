@@ -1,9 +1,16 @@
 """Prediction API route."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.genai.inference import get_ai_insight
+from app.genai.inference import get_ai_insight, get_stress_happiness_factors
 from app.inference import PredictionService
-from app.schemas import PredictionRequest, PredictionResponse, InsightRequest, InsightResponse
+from app.schemas import (
+    PredictionRequest,
+    PredictionResponse,
+    InsightRequest,
+    InsightResponse,
+    FactorsRequest,
+    FactorsResponse,
+)
 
 router = APIRouter(tags=["prediction"])
 
@@ -34,7 +41,7 @@ def get_insight(
 ) -> InsightResponse:
     """Get insight about the user's well-being based on their daily check-in data."""
     try:
-        insight_text = get_ai_insight(
+        return get_ai_insight(
             sleep_hours=request.sleep_hours,
             activity_level=request.activity_level,
             study_hours=request.study_hours,
@@ -42,6 +49,23 @@ def get_insight(
             how_you_feeling=request.how_you_feeling,
             notes=request.notes,
         )
-        return InsightResponse(insight=insight_text)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/factors", response_model=FactorsResponse, tags=["prediction"])
+def extract_factors(
+    request: FactorsRequest,
+) -> FactorsResponse:
+    """Extract and analyze stress/happiness factors from the user's daily check-in data."""
+    try:
+        return get_stress_happiness_factors(
+            sleep_hours=request.sleep_hours,
+            activity_level=request.activity_level,
+            study_hours=request.study_hours,
+            social_score=request.social_score,
+            how_you_feeling=request.how_you_feeling,
+            notes=request.notes,
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

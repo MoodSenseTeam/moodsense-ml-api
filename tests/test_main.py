@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routes import get_prediction_service
-from app.schemas import MoodScore, PredictionResponse
+from app.schemas import MoodScore, PredictionResponse, Factor, FactorsResponse, Recommendation, InsightResponse
 
 client = TestClient(app)
 
@@ -78,8 +78,14 @@ def test_predict_with_stubbed_service(override_service):
 from unittest.mock import patch
 
 def test_get_insight_success():
+    mock_response = InsightResponse(
+        insight="Ini adalah insight uji coba.",
+        recommendations=[
+            Recommendation(name="Jalan Santai", description="Coba jalan kaki selama 10 menit.", duration="10 menit")
+        ]
+    )
     with patch("app.routes.get_ai_insight") as mock_get_insight:
-        mock_get_insight.return_value = "Ini adalah insight uji coba."
+        mock_get_insight.return_value = mock_response
         response = client.post(
             "/api/v1/insight",
             json={
@@ -92,7 +98,16 @@ def test_get_insight_success():
             }
         )
         assert response.status_code == 200
-        assert response.json() == {"insight": "Ini adalah insight uji coba."}
+        assert response.json() == {
+            "insight": "Ini adalah insight uji coba.",
+            "recommendations": [
+                {
+                    "name": "Jalan Santai",
+                    "description": "Coba jalan kaki selama 10 menit.",
+                    "duration": "10 menit"
+                }
+            ]
+        }
         mock_get_insight.assert_called_once_with(
             sleep_hours=7.0,
             activity_level="moderate",
@@ -100,5 +115,46 @@ def test_get_insight_success():
             social_score=8,
             how_you_feeling="normal",
             notes="Belajar cukup melelahkan hari ini."
+        )
+
+
+def test_get_factors_success():
+    mock_response = FactorsResponse(
+        stressors=[
+            Factor(name="Tidur", value="4.0 jam", description="Kurang tidur.")
+        ],
+        boosters=[
+            Factor(name="Sosialisasi", value="8/10", description="Interaksi sosial yang baik.")
+        ]
+    )
+    with patch("app.routes.get_stress_happiness_factors") as mock_get_factors:
+        mock_get_factors.return_value = mock_response
+        response = client.post(
+            "/api/v1/factors",
+            json={
+                "sleep_hours": 4.0,
+                "activity_level": "none",
+                "study_hours": 8.0,
+                "social_score": 8,
+                "how_you_feeling": "stress",
+                "notes": "Capek banget belajar."
+            }
+        )
+        assert response.status_code == 200
+        assert response.json() == {
+            "stressors": [
+                {"name": "Tidur", "value": "4.0 jam", "description": "Kurang tidur."}
+            ],
+            "boosters": [
+                {"name": "Sosialisasi", "value": "8/10", "description": "Interaksi sosial yang baik."}
+            ]
+        }
+        mock_get_factors.assert_called_once_with(
+            sleep_hours=4.0,
+            activity_level="none",
+            study_hours=8.0,
+            social_score=8,
+            how_you_feeling="stress",
+            notes="Capek banget belajar."
         )
 
