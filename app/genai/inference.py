@@ -1,12 +1,26 @@
+from pathlib import Path
+import os
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-import os
-load_dotenv()
 
-client = genai.Client(
-    api_key=os.getenv("LLM_API_KEY")
-)
+_client = None
+
+def get_client() -> genai.Client:
+    global _client
+    if _client is None:
+        # Load .env relative to this file's location to support any CWD
+        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+        load_dotenv(dotenv_path=env_path)
+        
+        api_key = os.getenv("LLM_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "LLM_API_KEY environment variable is missing. Please check your .env file."
+            )
+        _client = genai.Client(api_key=api_key)
+    return _client
+
 
 def get_ai_insight(
     sleep_hours: float,
@@ -64,6 +78,7 @@ Perasaan: {how_you_feeling}
 Catatan: "{notes if notes else '-'}"
 
 Berikan insight dan saran:"""
+    client = get_client()
     response = client.models.generate_content(
         model="gemini-3.5-flash",
         contents=user_prompt,
