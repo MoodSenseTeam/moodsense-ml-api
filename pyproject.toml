@@ -17,6 +17,8 @@ dependencies = [
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
     "python-multipart>=0.0.9",
+    "google-genai>=2.7.0",
+    "python-dotenv>=1.0.1",
 ]
 
 [dependency-groups]
