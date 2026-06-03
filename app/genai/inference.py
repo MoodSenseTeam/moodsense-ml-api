@@ -3,7 +3,7 @@ import os
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from app.schemas import FactorsResponse, InsightResponse
+from app.schemas import FactorsResponse, InsightResponse, ForecastRequest, ForecastResponse
 
 _client = None
 
@@ -142,6 +142,68 @@ Ekstrak faktor stres (stressors) dan kebahagiaan (boosters):"""
     )
     
     return FactorsResponse.model_validate_json(response.text)
+
+
+def get_mood_forecast(data: ForecastRequest) -> ForecastResponse:
+    system_instruction = (
+        "Kamu adalah 'MoodSense Forecaster', sebuah sistem analitik yang memproyeksikan mood pengguna "
+        "beberapa hari ke depan berdasarkan data tren historis dan metrik keseharian.\n\n"
+
+        "## Tugas Utama\n"
+        "Analisis data tren mood 7 hari terakhir dan proyeksikan mood untuk 5 hari ke depan. "
+        "Berikan analisis tren dan tips yang actionable.\n\n"
+
+        "## Panduan Proyeksi\n"
+        "- Jika tren mingguan naik → lanjutkan kenaikan dengan momentum serupa (jangan loncat drastis).\n"
+        "- Jika tren mingguan turun → proyeksi penurunan bertahap, lalu landai.\n"
+        "- Jika tren stabil → pertahankan dengan sedikit fluktuasi alami.\n"
+        "- Pertimbangkan konteks: streak check-in yang panjang = kebiasaan baik, sleep quality rendah = risk factor.\n"
+        "- Latest mood (VERY_HAPPY/HAPPY/NORMAL/STRESS/VERY_STRESS) beri bobot pada arah tren.\n"
+        "- Confidence: lebih tinggi di hari dekat (0.7-0.9), menurun untuk hari jauh (0.4-0.6).\n\n"
+
+        "## Aturan Output (WAJIB)\n"
+        "1. Field 'forecasts': 5 hari ke depan. Setiap hari berisi:\n"
+        "   - 'day': label hari dalam Bahasa Indonesia ('Besok', 'Lusa', '3 Hari Lagi', '4 Hari Lagi', '5 Hari Lagi').\n"
+        "   - 'date': tanggal dalam format YYYY-MM-DD (besok = esok hari dari hari ini, dst).\n"
+        "   - 'predicted_mood': skor 0.0-10.0 (1 digit desimal).\n"
+        "   - 'label': 'Buruk' (0-2.5), 'Kurang' (2.6-4.5), 'Biasa' (4.6-6.5), 'Baik' (6.6-8.5), 'Luar Biasa' (8.6-10).\n"
+        "   - 'confidence': 0.0-1.0 (menurun tiap hari).\n"
+        "2. Field 'trend_direction': 'meningkat', 'menurun', atau 'stabil'.\n"
+        "3. Field 'trend_analysis': 2-3 kalimat analisis dalam Bahasa Indonesia yang menjelaskan pola dan prediksi.\n"
+        "4. Field 'prevention_tips': 2-3 tips konkret jika tren menurun atau ada risk factor (tidur buruk, dll). Kosongkan list jika tren baik.\n"
+        "5. Field 'boost_tips': 2-3 tips untuk mempertahankan atau meningkatkan jika tren positif. Kosongkan list jika tren buruk.\n"
+        "6. Tips harus ringkas dan actionable (contoh: 'Tidur minimal 7 jam malam ini untuk stabilkan mood besok')."
+    )
+
+    trend_lines = "\n".join(
+        f"  - {point.date}: {point.average_mood}/10"
+        for point in data.weekly_trend
+    )
+
+    user_prompt = f"""Berikut data tren mood pengguna 7 hari terakhir:
+
+{trend_lines}
+
+Rata-rata Mood Keseluruhan: {data.average_mood}/10
+Kualitas Tidur: {data.sleep_quality}/10
+Streak Check-in: {data.check_in_streak} hari
+Perasaan Terbaru: {data.latest_mood or 'Tidak diketahui'}
+
+Proyeksikan mood untuk 5 hari ke depan:"""
+
+    client = get_client()
+    response = client.models.generate_content(
+        model="gemini-3.5-flash",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=ForecastResponse,
+            temperature=0.3,
+        )
+    )
+
+    return ForecastResponse.model_validate_json(response.text)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,13 @@
 """Prediction API route."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.genai.inference import get_ai_insight, get_stress_happiness_factors
+from app.genai.inference import get_ai_insight, get_mood_forecast, get_stress_happiness_factors
 from app.inference import PredictionService
 from app.schemas import (
     PredictionRequest,
     PredictionResponse,
+    ForecastRequest,
+    ForecastResponse,
     InsightRequest,
     InsightResponse,
     FactorsRequest,
@@ -67,5 +69,16 @@ def extract_factors(
             how_you_feeling=request.how_you_feeling,
             notes=request.notes,
         )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/forecast", response_model=ForecastResponse, tags=["prediction"])
+def forecast_mood(
+    request: ForecastRequest,
+) -> ForecastResponse:
+    """Proyeksikan mood 5 hari ke depan berdasarkan data tren historis menggunakan Gemini."""
+    try:
+        return get_mood_forecast(request)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
